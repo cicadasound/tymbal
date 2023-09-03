@@ -1,8 +1,8 @@
 #!/bin/bash
 
 START_DIR=$PWD
-LIBDAISY_DIR=$PWD/libDaisy
-DAISYSP_DIR=$PWD/DaisySP
+LIBDAISY_DIR=$PWD/../libDaisy
+DAISYSP_DIR=$PWD/../DaisySP
 
 echo "building libDaisy . . ."
 cd "$LIBDAISY_DIR" ; make -s clean ; make -j -s
