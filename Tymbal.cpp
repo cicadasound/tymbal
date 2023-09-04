@@ -15,34 +15,8 @@ bool ValuesChangedThreshold(float last_value, float new_value) {
     return is_changed;
 }
 
-
 inline float Crossfade(float a, float b, float fade) {
     return a + (b - a) * fade;
-}
-
-uint8_t GetWaveform(int index) {
-    int waveform;
-    switch(index) {
-        case 0:
-            waveform = Oscillator::WAVE_SQUARE;
-            break;
-        case 1:
-            waveform = Oscillator::WAVE_TRI;
-            break;
-        case 2:
-            waveform = Oscillator::WAVE_SAW;
-            break;
-        case 3:
-            waveform = Oscillator::WAVE_POLYBLEP_SQUARE;
-            break;
-        case 4:
-            waveform = Oscillator::WAVE_POLYBLEP_TRI;
-            break;
-        default:
-            waveform = Oscillator::WAVE_POLYBLEP_SQUARE;
-            break;
-    }
-    return waveform;
 }
 
 float GetTuningOffset(int index) {
@@ -67,7 +41,24 @@ float GetTuningOffset(int index) {
     return offset;
 }
 
+struct Settings {
+    float volume;
+    float fine_tune;
+
+    bool operator==(const Settings& rhs) {
+        return volume == rhs.volume && fine_tune == rhs.fine_tune;
+    }
+    bool operator!=(const Settings& rhs) { return !operator==(rhs); }
+};
+
+Settings default_settings{
+    0.3f, // volume
+    0.0f, // fine_tune
+};
+
 DaisyPatchSM patch;
+
+PersistentStorage<Settings> storage(patch.qspi);
 
 Switch button;
 Switch toggle;
@@ -87,23 +78,27 @@ MoogLadder filter_r;
 
 Compressor compressor;
 
+Oscillator led_lfo;
+
 float main_volume = 0.5f;
 
-float pitch_knob = 0.5f;
 float knob_1_last_value;
 float attack_knob;
-
+float pitch_knob = 0.5f;
 float fine_knob = 0.5f;
+
 float knob_2_last_value;
 float decay_knob;
-
-float cutoff_knob;
-float knob_3_last_value;
-float detune_knob = 0.0f;
-
-float resonance_knob;
-float knob_4_last_value;
+float shape_knob = 0.0f;
 float volume_knob = 0.5f;
+
+float knob_3_last_value;
+float cutoff_knob;
+float filter_env_knob = 0.0f;
+
+float knob_4_last_value;
+float resonance_knob;
+float modulate_knob = 0.0f;
 
 float osc_out_l;
 float osc_out_r;
@@ -114,13 +109,20 @@ float env_out_2;
 bool gate_1_triggered = false;
 bool gate_2_triggered = false;
 
-float voct_1_initial_zero = 0.0f;
-float voct_2_initial_zero = 0.0f;
-bool initial_zero_1_set = false;
-bool initial_zero_2_set = false;
+bool settings_mode = false;
+bool trigger_save = false;
+bool settings_initialized = false;
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     patch.ProcessAllControls();
+
+    Settings& settings_data = storage.GetSettings();
+
+    if (!settings_initialized) {
+        volume_knob = settings_data.volume;
+        fine_knob = settings_data.fine_tune;
+        settings_initialized = true;
+    }
 
     toggle.Debounce();
     button.Debounce();
@@ -128,15 +130,16 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float voct_1_input = patch.GetAdcValue(CV_5);
     float voct_2_input = patch.GetAdcValue(CV_6);
 
-    // if (!initial_zero_1_set && voct_1_input <= 0.001) {
-    //     voct_1_initial_zero = voct_1_input;
-    //     initial_zero_1_set = true;
-    // }
+    if (button.RisingEdge() && settings_mode) {
+        settings_mode = false;
+        settings_data.fine_tune = fine_knob;
+        settings_data.volume = volume_knob;
+        trigger_save = true;
+    }
 
-    // if (!initial_zero_2_set && voct_2_input <= 0.001) {
-    //     voct_1_initial_zero = voct_2_input;
-    //     initial_zero_2_set = true;
-    // }
+    if (button.TimeHeldMs() >= 3000.0f && !settings_mode) {
+        settings_mode = true;
+    }
 
     if (patch.gate_in_1.Trig()) {
         gate_1_triggered = true;
@@ -156,7 +159,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     bool knob_1_changed = ValuesChangedThreshold(knob_1_last_value, knob_1_current_value);
     if (knob_1_changed) {
-        if (shift_mode) {
+        if (settings_mode) {
+            fine_knob = knob_1_current_value;
+        } else if (shift_mode) {
             pitch_knob = knob_1_current_value;
         } else {
             attack_knob = knob_1_current_value;
@@ -177,8 +182,10 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     bool knob_2_changed = ValuesChangedThreshold(knob_2_last_value, knob_2_current_value);
     if (knob_2_changed) {
-        if (shift_mode) {
-            fine_knob = knob_2_current_value;
+        if (settings_mode) {
+            volume_knob = knob_2_current_value;
+        } else if (shift_mode) {
+            shape_knob = knob_2_current_value;
         } else {
             decay_knob = knob_2_current_value;
         }
@@ -197,7 +204,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     bool cutoff_changed = ValuesChangedThreshold(knob_3_last_value, knob_3_current_value);
     if (cutoff_changed) {
         if (shift_mode) {
-            detune_knob = knob_3_current_value;
+            filter_env_knob = knob_3_current_value;
         } else {
             cutoff_knob = knob_3_current_value;
         }
@@ -210,33 +217,21 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     filter_l.SetFreq(filter_frequency);
     filter_r.SetFreq(filter_frequency);
 
-    // float osc_amp = fmap(filter_frequency, 0.25f, 0.1f, Mapping::LOG);
-    // osc_1.SetAmp(osc_amp);
-    // osc_2.SetAmp(osc_amp);
-    // osc_1_detune.SetAmp(osc_amp);
-    // osc_2_detune.SetAmp(osc_amp);
-    // osc_1_square.SetAmp(osc_amp);
-    // osc_2_square.SetAmp(osc_amp);
+    float shape_value = fmap(shape_knob, 0.0f, 1.0f, Mapping::LINEAR);
 
-    float detune_amt = fmap(detune_knob, 0.0f, 1.0f, Mapping::LINEAR);
-
-    float voct_cv_1 = voct_1_input - voct_1_initial_zero;
+    float voct_cv_1 = voct_1_input;
     float voct_1 = fmap(voct_cv_1, 0.f, 60.f);
     float midi_nn_1 = fclamp(pitch_offset + voct_1 + fine_offset, 0.f, 127.f);
     float osc_freq_1 = mtof(midi_nn_1);
-    float osc_1_detune_freq = osc_freq_1 + (0.05 * osc_freq_1 * detune_amt);
 
-    float voct_cv_2 = voct_2_input - voct_2_initial_zero;
+    float voct_cv_2 = voct_2_input;
     float voct_2 = fmap(voct_cv_2, 0.f, 60.f);
     float midi_nn_2 = fclamp(pitch_offset + voct_2 + fine_offset, 0.f, 127.f);
     float osc_freq_2 = mtof(midi_nn_2);
-    float osc_2_detune_freq = osc_freq_2 - (0.05 * osc_freq_2 * detune_amt);
 
     osc_1.SetFreq(osc_freq_1);
-    osc_1_detune.SetFreq(osc_1_detune_freq);
     osc_1_square.SetFreq(osc_freq_1);
     osc_2.SetFreq(osc_freq_2);
-    osc_2_detune.SetFreq(osc_2_detune_freq);
     osc_2_square.SetFreq(osc_freq_2);
 
     /** Resonance and release */
@@ -244,7 +239,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     bool resonance_changed = ValuesChangedThreshold(knob_4_last_value, knob_4_current_value);
     if (resonance_changed) {
         if (shift_mode) {
-            volume_knob = knob_4_current_value;
+            modulate_knob = knob_4_current_value;
         } else {
             resonance_knob = knob_4_current_value;
         }
@@ -256,7 +251,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     filter_l.SetRes(filter_resonance);
     filter_r.SetRes(filter_resonance);
 
-    float volume = fmap(0.5f, 0.0f, 1.0f, Mapping::LINEAR);
+    float volume = fmap(volume_knob, 0.0f, 1.0f, Mapping::LINEAR);
 
     for(size_t i = 0; i < size; i++) {
         float dry_l = IN_L[i];
@@ -265,12 +260,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         env_out_1 = env_1.Process();
         env_out_2 = env_2.Process();
 
-        float osc_1_out = Crossfade(osc_1.Process(), osc_1_square.Process(), detune_amt);
-        // float osc_1_detune_out = osc_1_detune.Process();
-        float osc_2_out = Crossfade(osc_2.Process(), osc_2_square.Process(), detune_amt);
-        // float osc_2_detune_out = osc_2_detune.Process();
-        // float osc_square_mix = (osc_1_square.Process() + osc_2_square.Process()) * detune_amt;
-        float osc_mix = osc_1_out + osc_2_out;
+        float osc_1_out = Crossfade(osc_1.Process(), osc_1_square.Process(), shape_value);
+        float osc_2_out = Crossfade(osc_2.Process(), osc_2_square.Process(), shape_value);
+        float osc_mix = (osc_1_out * env_out_1) + (osc_2_out * env_out_2);
 
         osc_out_l = osc_mix;
         osc_out_r = osc_mix;
@@ -291,10 +283,15 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         float wet_l = filter_l.Process(compressed_l);
         float wet_r = filter_r.Process(compressed_r);
 
-        patch.WriteCvOut(CV_OUT_BOTH, (env_out_1 * 5.0f));
+        if (settings_mode) {
+            float led_lfo_value = led_lfo.Process();
+            patch.WriteCvOut(CV_OUT_BOTH, (led_lfo_value * 5.0f));
+        } else {
+            patch.WriteCvOut(CV_OUT_BOTH, (env_out_1 * 5.0f));
+        }
 
-        OUT_L[i] = wet_l * env_out_1 * volume;
-        OUT_R[i] = wet_r * env_out_2 * volume;
+        OUT_L[i] = wet_l * volume;
+        OUT_R[i] = wet_r * volume;
     }
 }
 
@@ -303,6 +300,15 @@ int main(void)
     patch.Init();
 
     float sample_rate = patch.AudioSampleRate();
+
+    storage.Init(default_settings);
+    if(storage.GetState() == PersistentStorage<Settings>::State::FACTORY) {
+        // Update the user values with the defaults.
+        storage.RestoreDefaults();
+    }
+
+    /** Restore settings from previous power cycle */
+    // Settings& settings_data = storage.GetSettings();
 
     button.Init(patch.B7, sample_rate);
     toggle.Init(patch.B8, sample_rate);
@@ -332,8 +338,8 @@ int main(void)
     osc_2.SetAmp(0.1f);
     osc_1_detune.SetAmp(0.1f);
     osc_2_detune.SetAmp(0.1f);
-    osc_1_square.SetAmp(0.025f);
-    osc_1_square.SetAmp(0.025f);
+    osc_1_square.SetAmp(0.015f);
+    osc_1_square.SetAmp(0.015f);
 
     osc_1.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
     osc_2.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
@@ -341,8 +347,14 @@ int main(void)
     osc_2_detune.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
     osc_1_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
     osc_2_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
-    osc_1_square.SetPw(0.25f);
-    osc_2_square.SetPw(0.75f);
+    
+    // osc_1_square.SetPw(0.25f);
+    // osc_2_square.SetPw(0.75f);
+
+    led_lfo.Init(sample_rate);
+    led_lfo.SetWaveform(Oscillator::WAVE_SQUARE);
+    led_lfo.SetAmp(1.0f);
+    led_lfo.SetFreq(5.0f);
 
     filter_l.Init(sample_rate);
     filter_r.Init(sample_rate);
@@ -361,5 +373,11 @@ int main(void)
 
     patch.StartAudio(AudioCallback);
     
-    while(1) {}
+    while(1) {
+        patch.Delay(1);
+        if (trigger_save) {
+            storage.Save();
+            trigger_save = false;
+        }
+    }
 }

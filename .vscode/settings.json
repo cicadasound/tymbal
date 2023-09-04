@@ -1,0 +1,11 @@
+{
+  "files.associations": {
+    "*.tcc": "cpp",
+    "cmath": "cpp",
+    "array": "cpp",
+    "string": "cpp",
+    "string_view": "cpp",
+    "vector": "cpp"
+  },
+  "cmake.sourceDirectory": "/Users/dom/Development/daisy/DaisySP"
+}
