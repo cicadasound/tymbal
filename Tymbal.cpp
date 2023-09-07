@@ -94,6 +94,7 @@ MoogLadder filter_l;
 MoogLadder filter_r;
 
 Compressor compressor;
+Chorus chorus;
 
 float main_volume = 0.5f;
 
@@ -109,7 +110,7 @@ float volume_knob = 0.5f;
 
 float knob_3_last_value;
 float cutoff_knob;
-float filter_env_knob = 0.0f;
+float chorus_knob = 0.0f;
 
 float knob_4_last_value;
 float resonance_knob;
@@ -135,6 +136,13 @@ float scale_2;
 float offset_2;
 
 float pitch_offset = 0.0f;
+
+float chorus_delay_target_1 = 0.0f;
+float chorus_delay_1 = 0.0f;
+float chorus_delay_target_2 = 0.0f;
+float chorus_delay_2 = 0.0f;
+float chorus_lfo_target = 0.0f;
+float chorus_lfo = 0.0f;
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     patch.ProcessAllControls();
@@ -194,7 +202,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     bool knob_1_changed = ValuesChangedThreshold(knob_1_last_value, knob_1_current_value);
 
-
     if (knob_1_changed) {
         if (shift_mode) {
             pitch_knob = knob_1_current_value;
@@ -234,7 +241,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     bool cutoff_changed = ValuesChangedThreshold(knob_3_last_value, knob_3_current_value);
     if (cutoff_changed) {
         if (shift_mode) {
-            filter_env_knob = knob_3_current_value;
+            chorus_knob = knob_3_current_value;
         } else {
             cutoff_knob = knob_3_current_value;
         }
@@ -242,20 +249,22 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         knob_3_last_value = knob_3_current_value;
     }
 
+    chorus_delay_target_1 = fmap(chorus_knob, 0.0f, 1.0f);
+    chorus_delay_target_2 = fmap(chorus_knob, 0.0f, 1.0f);
+    chorus_lfo_target = fmap(chorus_knob, 0.0f, 1.0f);
+
     float filter_cv = patch.GetAdcValue(CV_7);
     float filter_frequency = fmap(cutoff_knob + filter_cv, 20.0f, 18000.0f, Mapping::LOG);
     filter_l.SetFreq(filter_frequency);
     filter_r.SetFreq(filter_frequency);
 
-    float shape_value = fmap(shape_knob, 0.0f, 2.0f, Mapping::LINEAR);
+    float shape_cv = patch.GetAdcValue(CV_8);
+    float shape_value = fmap(shape_knob + shape_cv, 0.0f, 2.0f, Mapping::LINEAR);
 
-    // float voct_1 = fmap(voct_1_input, 0.f, 60.0f);
-    // float pitch_offset_value = fmap(pitch_offset, 0.f, 60.0f);
     float note_1 = calibration_1.cal.ProcessInput(voct_1_input);
     float midi_nn_1 = fclamp(note_1 + pitch_offset, 0.f, 127.f);
     float osc_freq_1 = mtof(midi_nn_1);
 
-    // float voct_2 = fmap(voct_2_input, 0.f, 60.0f);
     float note_2 = calibration_2.cal.ProcessInput(voct_2_input);
     float midi_nn_2 = fclamp(note_2 + pitch_offset, 0.f, 127.f);
     float osc_freq_2 = mtof(midi_nn_2);
@@ -277,11 +286,22 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     filter_l.SetRes(filter_resonance);
     filter_r.SetRes(filter_resonance);
 
+    float k = modulate_knob * 0.5f;
+    chorus.SetPan(0.5f - k, 0.5f + k);
+    chorus.SetLfoFreq(k * k * 20.f);
+
     float volume = fmap(volume_knob, 0.0f, 1.0f, Mapping::LINEAR);
 
     for(size_t i = 0; i < size; i++) {
         float dry_l = IN_L[i];
         float dry_r = IN_R[i];
+
+        fonepole(chorus_delay_1, chorus_delay_target_1, .0001f);
+        fonepole(chorus_delay_2, chorus_delay_target_2, .0001f);
+        fonepole(chorus_lfo, chorus_lfo_target, .0001f);
+
+        chorus.SetLfoDepth(chorus_lfo);
+        chorus.SetDelay(chorus_delay_1, chorus_delay_2);
 
         env_out_1 = env_1.Process();
         env_out_2 = env_2.Process();
@@ -292,7 +312,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         osc_2.SetFreq(osc_freq_2);
         osc_2_square.SetFreq(osc_freq_2);
         osc_2_saw.SetFreq(osc_freq_2);
-
 
         float osc_1_processed = osc_1.Process();
         float osc_2_processed = osc_2.Process();
@@ -313,13 +332,12 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
         float osc_mix = (osc_1_out * env_out_1) + (osc_2_out * env_out_2);
 
-        osc_out_l = osc_mix;
-        osc_out_r = osc_mix;
+        chorus.Process(osc_mix);
 
         float compressor_in_l, compressor_in_r;
         if (normal_mode) {
-            compressor_in_l = osc_out_l;
-            compressor_in_r = osc_out_r;
+            compressor_in_l = chorus.GetLeft();
+            compressor_in_r = chorus.GetRight();
         } else {
            compressor_in_l = dry_l;
            compressor_in_r = dry_r;
@@ -388,8 +406,8 @@ int main(void)
 
     osc_1.SetAmp(0.1f);
     osc_2.SetAmp(0.1f);
-    osc_1_square.SetAmp(0.015f);
-    osc_1_square.SetAmp(0.015f);
+    osc_1_square.SetAmp(0.012f);
+    osc_1_square.SetAmp(0.012f);
     osc_1_saw.SetAmp(0.015f);
     osc_1_saw.SetAmp(0.015f);
 
@@ -399,6 +417,8 @@ int main(void)
     osc_2_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
     osc_1_saw.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
     osc_2_saw.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
+
+    chorus.Init(sample_rate);
 
     filter_l.Init(sample_rate);
     filter_r.Init(sample_rate);
