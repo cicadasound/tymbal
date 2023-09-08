@@ -11,6 +11,8 @@ float CHANGE_THRESHOLD = 0.002f;
 float ZERO_RANGE = 0.002f;
 float DETUNE_RANGE = 0.005f;
 
+float last_button_press;
+
 bool ValuesChangedThreshold(float last_value, float new_value) {
     bool is_changed = fabsf(new_value - last_value) > CHANGE_THRESHOLD;
     return is_changed;
@@ -37,10 +39,16 @@ float GetTuningOffset(int index) {
             offset = 12.0f;
             break;
         case 3:
+            offset = 12.0f;
+            break;
+        case 4:
             offset = 24.0f;
             break;
+        case 5:
+            offset = 36.0f;
+            break;
         default:
-            offset = 0.0f;
+            offset = 12.0f;
             break;
     }
     return offset;
@@ -100,20 +108,24 @@ float main_volume = 0.5f;
 
 float knob_1_last_value;
 float attack_knob;
+float attack_knob_pickup = 0.0f;
 float pitch_knob = 0.5f;
 float fine_knob = 0.5f;
 
 float knob_2_last_value;
 float decay_knob;
+float decay_knob_pickup = 0.0f;
 float shape_knob = 0.0f;
 float volume_knob = 0.5f;
 
 float knob_3_last_value;
 float cutoff_knob;
+float cutoff_knob_pickup = 0.0f;
 float chorus_knob = 0.0f;
 
 float knob_4_last_value;
 float resonance_knob;
+float resonance_knob_pickup = 0.0f;
 float modulate_knob = 0.0f;
 
 float osc_out_l;
@@ -143,6 +155,8 @@ float chorus_delay_target_2 = 0.0f;
 float chorus_delay_2 = 0.0f;
 float chorus_lfo_target = 0.0f;
 float chorus_lfo = 0.0f;
+
+int button_press_count = 0;
 
 void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
     patch.ProcessAllControls();
@@ -177,7 +191,19 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         led_brightness = calibration_1.GetBrightness();
     }
 
-    if (button.TimeHeldMs() >= 5000.0f && !calibration_mode) {
+    float time_now = System::GetNow();
+    float time_between_presses = time_now - last_button_press;
+
+
+    if (time_between_presses >= 1000 && button_press_count != 0) {
+        button_press_count = 0;
+    } else if (button_pressed && !calibration_mode) {
+        last_button_press = System::GetNow();
+        button_press_count++;
+    }
+
+    if (button_press_count >= 5 && !calibration_mode) {
+        button_press_count = 0;
         calibration_mode = true;
         led_brightness = 1.0f;
         calibration_1.Start();
@@ -203,12 +229,19 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     bool knob_1_changed = ValuesChangedThreshold(knob_1_last_value, knob_1_current_value);
 
     if (knob_1_changed) {
+        float difference = knob_1_last_value - knob_1_current_value;
         if (shift_mode) {
+            attack_knob_pickup = attack_knob;
             pitch_knob = knob_1_current_value;
-            float coarse = fmap(pitch_knob, 0, 4);
+            float coarse = fmap(pitch_knob, 0, 5);
             pitch_offset = GetTuningOffset(coarse);
-        } else {
+        } else if (
+            attack_knob_pickup == 0.0f ||
+            (difference < 0.0f && knob_1_current_value >= attack_knob_pickup) ||
+            (difference > 0.0f && knob_1_current_value <= attack_knob_pickup)
+        ) {
             attack_knob = knob_1_current_value;
+            attack_knob_pickup = 0.0f;
         }
 
         knob_1_last_value = knob_1_current_value;
@@ -223,10 +256,17 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     bool knob_2_changed = ValuesChangedThreshold(knob_2_last_value, knob_2_current_value);
     if (knob_2_changed) {
+        float difference = knob_2_last_value - knob_2_current_value;
         if (shift_mode) {
+            decay_knob_pickup = decay_knob;
             shape_knob = knob_2_current_value;
-        } else {
+        } else if (
+            decay_knob_pickup == 0.0f ||
+            (difference < 0.0f && knob_2_current_value >= decay_knob_pickup) ||
+            (difference > 0.0f && knob_2_current_value <= decay_knob_pickup)
+        ) {
             decay_knob = knob_2_current_value;
+            decay_knob_pickup = 0.0f;
         }
 
         knob_2_last_value = knob_2_current_value;
@@ -239,19 +279,25 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     /** Cutoff and sustain */
     float knob_3_current_value = patch.GetAdcValue(CV_3);
     bool cutoff_changed = ValuesChangedThreshold(knob_3_last_value, knob_3_current_value);
+    
     if (cutoff_changed) {
+        float difference = knob_3_last_value - knob_3_current_value;
         if (shift_mode) {
+            cutoff_knob_pickup = cutoff_knob;
             chorus_knob = knob_3_current_value;
-        } else {
+        } else if (
+            cutoff_knob_pickup == 0.0f ||
+            (difference < 0.0f && knob_3_current_value >= cutoff_knob_pickup) ||
+            (difference > 0.0f && knob_3_current_value <= cutoff_knob_pickup)
+        ) {
             cutoff_knob = knob_3_current_value;
+            cutoff_knob_pickup = 0.0f;
         }
 
         knob_3_last_value = knob_3_current_value;
     }
 
-    chorus_delay_target_1 = fmap(chorus_knob, 0.0f, 1.0f);
-    chorus_delay_target_2 = fmap(chorus_knob, 0.0f, 1.0f);
-    chorus_lfo_target = fmap(chorus_knob, 0.0f, 1.0f);
+    chorus_lfo_target = fmap(chorus_knob, 0.0f, 0.8f);
 
     float filter_cv = patch.GetAdcValue(CV_7);
     float filter_frequency = fmap(cutoff_knob + filter_cv, 20.0f, 18000.0f, Mapping::LOG);
@@ -273,10 +319,17 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float knob_4_current_value = patch.GetAdcValue(CV_4);
     bool resonance_changed = ValuesChangedThreshold(knob_4_last_value, knob_4_current_value);
     if (resonance_changed) {
+        float difference = knob_4_last_value - knob_4_current_value;
         if (shift_mode) {
+            resonance_knob_pickup = resonance_knob;
             modulate_knob = knob_4_current_value;
-        } else {
+        } else if (
+            resonance_knob_pickup == 0.0f ||
+            (difference < 0.0f && knob_4_current_value >= resonance_knob_pickup) ||
+            (difference > 0.0f && knob_4_current_value <= resonance_knob_pickup)
+        ) {
             resonance_knob = knob_4_current_value;
+            resonance_knob_pickup = 0.0f;
         }
 
         knob_4_last_value = knob_4_current_value;
@@ -286,9 +339,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     filter_l.SetRes(filter_resonance);
     filter_r.SetRes(filter_resonance);
 
+
+    chorus_delay_target_1 = fmap(modulate_knob, 0.1f, 0.5f);
+    chorus_delay_target_2 = fmap(modulate_knob, 0.3f, 0.75f);
     float k = modulate_knob * 0.5f;
     chorus.SetPan(0.5f - k, 0.5f + k);
-    chorus.SetLfoFreq(k * k * 20.f);
 
     float volume = fmap(volume_knob, 0.0f, 1.0f, Mapping::LINEAR);
 
@@ -404,8 +459,8 @@ int main(void)
     osc_1_square.Init(sample_rate);
     osc_2_square.Init(sample_rate);
 
-    osc_1.SetAmp(0.1f);
-    osc_2.SetAmp(0.1f);
+    osc_1.SetAmp(0.2f);
+    osc_2.SetAmp(0.2f);
     osc_1_square.SetAmp(0.012f);
     osc_1_square.SetAmp(0.012f);
     osc_1_saw.SetAmp(0.015f);
@@ -419,6 +474,7 @@ int main(void)
     osc_2_saw.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
 
     chorus.Init(sample_rate);
+    chorus.SetLfoFreq(0.1f * 0.3f * 20.0f);
 
     filter_l.Init(sample_rate);
     filter_r.Init(sample_rate);
