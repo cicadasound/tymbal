@@ -1,22 +1,17 @@
 #include "daisy_patch_sm.h"
 #include "daisysp.h"
 #include "calibrate.h"
+#include "control.h"
 
 using namespace daisy;
 using namespace daisysp;
 using namespace patch_sm;
 
 #define MAX_SIZE 48000 * 2
-float CHANGE_THRESHOLD = 0.002f;
 float ZERO_RANGE = 0.002f;
 float DETUNE_RANGE = 0.005f;
 
 float last_button_press;
-
-bool ValuesChangedThreshold(float last_value, float new_value) {
-    bool is_changed = fabsf(new_value - last_value) > CHANGE_THRESHOLD;
-    return is_changed;
-}
 
 inline float Crossfade(float a, float b, float fade) {
     return a + (b - a) * fade;
@@ -104,7 +99,12 @@ MoogLadder filter_r;
 Compressor compressor;
 Chorus chorus;
 
-float main_volume = 0.5f;
+Control control_1;
+Control control_2;
+Control control_3;
+Control control_4;
+
+float volume = 0.5f;
 
 float knob_1_last_value;
 float attack_knob;
@@ -116,7 +116,6 @@ float knob_2_last_value;
 float decay_knob;
 float decay_knob_pickup = 0.0f;
 float shape_knob = 0.0f;
-float volume_knob = 0.5f;
 
 float knob_3_last_value;
 float cutoff_knob;
@@ -194,7 +193,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float time_now = System::GetNow();
     float time_between_presses = time_now - last_button_press;
 
-
     if (time_between_presses >= 1000 && button_press_count != 0) {
         button_press_count = 0;
     } else if (button_pressed && !calibration_mode) {
@@ -223,79 +221,31 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     bool normal_mode = toggle.Pressed();
     bool shift_mode = button.Pressed();
 
+
     /** Pitch and attack */
     float knob_1_current_value = patch.GetAdcValue(CV_1);
+    control_1.Process(shift_mode, knob_1_current_value, attack_knob, pitch_knob);
 
-    bool knob_1_changed = ValuesChangedThreshold(knob_1_last_value, knob_1_current_value);
-
-    if (knob_1_changed) {
-        float difference = knob_1_last_value - knob_1_current_value;
-        if (shift_mode) {
-            attack_knob_pickup = attack_knob;
-            pitch_knob = knob_1_current_value;
-            float coarse = fmap(pitch_knob, 0, 5);
-            pitch_offset = GetTuningOffset(coarse);
-        } else if (
-            attack_knob_pickup == 0.0f ||
-            (difference < 0.0f && knob_1_current_value >= attack_knob_pickup) ||
-            (difference > 0.0f && knob_1_current_value <= attack_knob_pickup)
-        ) {
-            attack_knob = knob_1_current_value;
-            attack_knob_pickup = 0.0f;
-        }
-
-        knob_1_last_value = knob_1_current_value;
-    }
-
+    float coarse = fmap(pitch_knob, 0, 5);
+    pitch_offset = GetTuningOffset(coarse);
     float attack_time = fmap(attack_knob, 0.005f, 5.0f, Mapping::LOG);
     env_1.SetTime(ADENV_SEG_ATTACK, attack_time);
     env_2.SetTime(ADENV_SEG_ATTACK, attack_time);
 
     /** Shape and decay */
     float knob_2_current_value = patch.GetAdcValue(CV_2);
-
-    bool knob_2_changed = ValuesChangedThreshold(knob_2_last_value, knob_2_current_value);
-    if (knob_2_changed) {
-        float difference = knob_2_last_value - knob_2_current_value;
-        if (shift_mode) {
-            decay_knob_pickup = decay_knob;
-            shape_knob = knob_2_current_value;
-        } else if (
-            decay_knob_pickup == 0.0f ||
-            (difference < 0.0f && knob_2_current_value >= decay_knob_pickup) ||
-            (difference > 0.0f && knob_2_current_value <= decay_knob_pickup)
-        ) {
-            decay_knob = knob_2_current_value;
-            decay_knob_pickup = 0.0f;
-        }
-
-        knob_2_last_value = knob_2_current_value;
-    }
+    control_2.Process(shift_mode, knob_2_current_value, decay_knob, shape_knob);
 
     float decay_time = fmap(decay_knob, 0.005f, 5.0f, Mapping::LOG);
     env_1.SetTime(ADENV_SEG_DECAY, decay_time);
     env_2.SetTime(ADENV_SEG_DECAY, decay_time);
 
+    float shape_cv = patch.GetAdcValue(CV_8);
+    float shape_value = fmap(shape_knob + shape_cv, 0.0f, 2.0f, Mapping::LINEAR);
+
     /** Cutoff and sustain */
     float knob_3_current_value = patch.GetAdcValue(CV_3);
-    bool cutoff_changed = ValuesChangedThreshold(knob_3_last_value, knob_3_current_value);
-    
-    if (cutoff_changed) {
-        float difference = knob_3_last_value - knob_3_current_value;
-        if (shift_mode) {
-            cutoff_knob_pickup = cutoff_knob;
-            chorus_knob = knob_3_current_value;
-        } else if (
-            cutoff_knob_pickup == 0.0f ||
-            (difference < 0.0f && knob_3_current_value >= cutoff_knob_pickup) ||
-            (difference > 0.0f && knob_3_current_value <= cutoff_knob_pickup)
-        ) {
-            cutoff_knob = knob_3_current_value;
-            cutoff_knob_pickup = 0.0f;
-        }
-
-        knob_3_last_value = knob_3_current_value;
-    }
+    control_3.Process(shift_mode, knob_3_current_value, cutoff_knob, chorus_knob);
 
     chorus_lfo_target = fmap(chorus_knob, 0.0f, 0.8f);
 
@@ -303,9 +253,6 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float filter_frequency = fmap(cutoff_knob + filter_cv, 20.0f, 18000.0f, Mapping::LOG);
     filter_l.SetFreq(filter_frequency);
     filter_r.SetFreq(filter_frequency);
-
-    float shape_cv = patch.GetAdcValue(CV_8);
-    float shape_value = fmap(shape_knob + shape_cv, 0.0f, 2.0f, Mapping::LINEAR);
 
     float note_1 = calibration_1.cal.ProcessInput(voct_1_input);
     float midi_nn_1 = fclamp(note_1 + pitch_offset, 0.f, 127.f);
@@ -317,35 +264,16 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     /** Resonance and release */
     float knob_4_current_value = patch.GetAdcValue(CV_4);
-    bool resonance_changed = ValuesChangedThreshold(knob_4_last_value, knob_4_current_value);
-    if (resonance_changed) {
-        float difference = knob_4_last_value - knob_4_current_value;
-        if (shift_mode) {
-            resonance_knob_pickup = resonance_knob;
-            modulate_knob = knob_4_current_value;
-        } else if (
-            resonance_knob_pickup == 0.0f ||
-            (difference < 0.0f && knob_4_current_value >= resonance_knob_pickup) ||
-            (difference > 0.0f && knob_4_current_value <= resonance_knob_pickup)
-        ) {
-            resonance_knob = knob_4_current_value;
-            resonance_knob_pickup = 0.0f;
-        }
-
-        knob_4_last_value = knob_4_current_value;
-    }
+    control_4.Process(shift_mode, knob_4_current_value, resonance_knob, modulate_knob);
 
     float filter_resonance = fmap(resonance_knob, 0.0f, 0.8f, Mapping::LINEAR);
     filter_l.SetRes(filter_resonance);
     filter_r.SetRes(filter_resonance);
 
-
     chorus_delay_target_1 = fmap(modulate_knob, 0.1f, 0.5f);
     chorus_delay_target_2 = fmap(modulate_knob, 0.3f, 0.75f);
     float k = modulate_knob * 0.5f;
     chorus.SetPan(0.5f - k, 0.5f + k);
-
-    float volume = fmap(volume_knob, 0.0f, 1.0f, Mapping::LINEAR);
 
     for(size_t i = 0; i < size; i++) {
         float dry_l = IN_L[i];
