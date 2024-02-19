@@ -104,7 +104,7 @@ Control control_2;
 Control control_3;
 Control control_4;
 
-float volume = 0.7f;
+float volume = 0.6f;
 
 float knob_1_last_value;
 float attack_knob;
@@ -268,7 +268,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float knob_4_current_value = patch.GetAdcValue(CV_4);
     control_4.Process(shift_mode, knob_4_current_value, resonance_knob, modulate_knob);
 
-    float filter_resonance = fmap(resonance_knob, 0.2f, 0.95f, Mapping::LINEAR);
+    float filter_resonance = fmap(resonance_knob, 0.0f, 0.98f, Mapping::LINEAR);
     filter_l.SetRes(filter_resonance);
     filter_r.SetRes(filter_resonance);
 
@@ -310,6 +310,9 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         if (shape_value < 1.0f) {
             osc_1_out = Crossfade(osc_1_processed, osc_1_square_processed, shape_value);
             osc_2_out = Crossfade(osc_2_processed, osc_2_square_processed, shape_value);
+        } else if (shape_value == 1.0f) {
+            osc_1_out = osc_1_square_processed;
+            osc_2_out = osc_2_square_processed;
         } else {
             osc_1_out = Crossfade(osc_1_square_processed, osc_1_saw_processed, shape_value - 1.0f);
             osc_2_out = Crossfade(osc_2_square_processed, osc_2_saw_processed, shape_value - 1.0f);
@@ -391,12 +394,12 @@ int main(void) {
     osc_1_square.Init(sample_rate);
     osc_2_square.Init(sample_rate);
 
-    osc_1.SetAmp(0.2f);
-    osc_2.SetAmp(0.2f);
+    osc_1.SetAmp(0.05f);
+    osc_2.SetAmp(0.05f);
     osc_1_square.SetAmp(0.012f);
-    osc_1_square.SetAmp(0.012f);
+    osc_2_square.SetAmp(0.012f);
     osc_1_saw.SetAmp(0.015f);
-    osc_1_saw.SetAmp(0.015f);
+    osc_2_saw.SetAmp(0.015f);
 
     osc_1.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
     osc_2.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
@@ -411,11 +414,11 @@ int main(void) {
     filter_l.Init(sample_rate);
     filter_l.SetFreq(15000.0f);
     filter_l.SetRes(0.1f);
-    filter_l.SetDrive(0.8);
+    filter_l.SetDrive(0.6);
     filter_r.Init(sample_rate);
     filter_r.SetFreq(15000.0f);
     filter_r.SetRes(0.1f);
-    filter_r.SetDrive(0.8);
+    filter_r.SetDrive(0.6);
 
     compressor.Init(sample_rate);
     compressor.SetAttack(0.01f);
