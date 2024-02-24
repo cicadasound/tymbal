@@ -98,6 +98,8 @@ Svf filter_r;
 
 Compressor compressor;
 Chorus chorus;
+ChorusEngine chorus_engine_l;
+ChorusEngine chorus_engine_r;
 
 Control control_1;
 Control control_2;
@@ -105,6 +107,9 @@ Control control_3;
 Control control_4;
 
 float volume = 0.6f;
+
+bool audio_triggered = false;
+float old_in_l, old_in_r;
 
 float knob_1_last_value;
 float attack_knob;
@@ -221,7 +226,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     dsy_gpio_write(&patch.gate_out_1, patch.gate_in_1.State());
     dsy_gpio_write(&patch.gate_out_2, patch.gate_in_2.State());
 
-    bool normal_mode = toggle.Pressed();
+    bool osc_mode = toggle.Pressed();
+    bool pass_mode = !osc_mode;
     bool shift_mode = button.Pressed();
 
     /** Attack and octave */
@@ -281,12 +287,23 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         float dry_l = IN_L[i];
         float dry_r = IN_R[i];
 
+        if (old_in_l - dry_l > 0.001f) {
+            audio_triggered = true;
+        }
+
+        old_in_l = dry_l;
+        old_in_r = dry_r;
+
         fonepole(chorus_delay_1, chorus_delay_target_1, .0001f);
         fonepole(chorus_delay_2, chorus_delay_target_2, .0001f);
         fonepole(chorus_lfo, chorus_lfo_target, .0001f);
 
         chorus.SetLfoDepth(chorus_lfo);
-        chorus.SetDelay(chorus_delay_1, chorus_delay_2);
+        chorus.SetLfoFreq(chorus_delay_1, chorus_delay_2);
+        chorus_engine_l.SetLfoDepth(chorus_lfo);
+        chorus_engine_l.SetLfoFreq(chorus_delay_1);
+        chorus_engine_r.SetLfoDepth(chorus_lfo);
+        chorus_engine_r.SetLfoFreq(chorus_delay_2);
 
         env_out_1 = env_1.Process();
         env_out_2 = env_2.Process();
@@ -320,18 +337,18 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
         float osc_mix = (osc_2_out * env_out_2) + (osc_1_out * env_out_1);
 
-        chorus.Process(osc_mix);
-
         float compressor_in_l, compressor_in_r;
-        if (normal_mode) {
+
+        if (osc_mode) {
+            chorus.Process(osc_mix);
             compressor_in_l = chorus.GetLeft();
             compressor_in_r = chorus.GetRight();
         } else {
-           compressor_in_l = dry_l;
-           compressor_in_r = dry_r;
+            compressor_in_l = chorus_engine_l.Process(dry_l);
+            compressor_in_r = chorus_engine_l.Process(dry_r);
         }
 
-        /** Run the reverb trail through the compressor */
+        // Compress the output
         float compressed_l = compressor.Process(compressor_in_l);
         float compressed_r = compressor.Process(compressor_in_r);
 
@@ -347,8 +364,13 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
             patch.WriteCvOut(CV_OUT_BOTH, (env_out_1 * 5.0f));
         }
 
-        OUT_L[i] = wet_l * volume;
-        OUT_R[i] = wet_r * volume;
+        if (!audio_triggered && pass_mode) {
+            OUT_L[i] = env_out_1;
+            OUT_R[i] = env_out_2;
+        } else {
+            OUT_L[i] = wet_l * volume;
+            OUT_R[i] = wet_r * volume;
+        }
     }
 }
 
@@ -410,6 +432,10 @@ int main(void) {
 
     chorus.Init(sample_rate);
     chorus.SetLfoFreq(0.1f * 0.3f * 20.0f);
+    chorus_engine_l.Init(sample_rate);
+    chorus_engine_l.SetLfoFreq(0.1f * 0.3f * 20.0f);
+    chorus_engine_r.Init(sample_rate);
+    chorus_engine_r.SetLfoFreq(0.1f * 0.3f * 20.0f);
 
     filter_l.Init(sample_rate);
     filter_l.SetFreq(15000.0f);
