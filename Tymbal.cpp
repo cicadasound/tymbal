@@ -13,43 +13,48 @@ float DETUNE_RANGE = 0.005f;
 
 float last_button_press;
 
-inline float Crossfade(float a, float b, float fade) {
+inline float Crossfade(float a, float b, float fade)
+{
     return a + (b - a) * fade;
 }
 
-float IndexToBrightness(int index, int total) {
+float IndexToBrightness(int index, int total)
+{
     return static_cast<float>(index + 1) / static_cast<float>(total);
 }
 
-float GetTuningOffset(int index) {
+float GetTuningOffset(int index)
+{
     float offset;
-    switch(index) {
-        case 0:
-            offset = -12.0f;
-            break;
-        case 1:
-            offset = 0.0f;
-            break;
-        case 2:
-            offset = 12.0f;
-            break;
-        case 3:
-            offset = 12.0f;
-            break;
-        case 4:
-            offset = 24.0f;
-            break;
-        case 5:
-            offset = 36.0f;
-            break;
-        default:
-            offset = 12.0f;
-            break;
+    switch (index)
+    {
+    case 0:
+        offset = -12.0f;
+        break;
+    case 1:
+        offset = 0.0f;
+        break;
+    case 2:
+        offset = 12.0f;
+        break;
+    case 3:
+        offset = 12.0f;
+        break;
+    case 4:
+        offset = 24.0f;
+        break;
+    case 5:
+        offset = 36.0f;
+        break;
+    default:
+        offset = 12.0f;
+        break;
     }
     return offset;
 }
 
-struct Settings {
+struct Settings
+{
     float volume;
     float fine_tune;
     float scale_1;
@@ -57,19 +62,20 @@ struct Settings {
     float scale_2;
     float offset_2;
 
-    bool operator==(const Settings& rhs) {
-        return volume == rhs.volume && 
-            fine_tune == rhs.fine_tune &&
-            scale_1 == rhs.scale_1 &&
-            offset_1 == rhs.offset_1 &&
-            scale_2 == rhs.scale_2 &&
-            offset_2 == rhs.offset_2;
+    bool operator==(const Settings &rhs)
+    {
+        return volume == rhs.volume &&
+               fine_tune == rhs.fine_tune &&
+               scale_1 == rhs.scale_1 &&
+               offset_1 == rhs.offset_1 &&
+               scale_2 == rhs.scale_2 &&
+               offset_2 == rhs.offset_2;
     }
-    bool operator!=(const Settings& rhs) { return !operator==(rhs); }
+    bool operator!=(const Settings &rhs) { return !operator==(rhs); }
 };
 
 Settings default_settings{
-    0.3f, // volume
+    0.8f, // volume
     0.0f, // fine_tune
 };
 
@@ -106,7 +112,7 @@ Control control_2;
 Control control_3;
 Control control_4;
 
-float volume = 0.6f;
+float volume = 0.8f;
 
 bool audio_triggered = false;
 float old_in_l, old_in_r;
@@ -135,6 +141,17 @@ float modulate_knob = 0.0f;
 float osc_out_l;
 float osc_out_r;
 
+float osc_pw_l = 0.2f;
+float osc_pw_target_l = 0.2f;
+float osc_pw_r = 0.3f;
+float osc_pw_target_r = 0.3f;
+
+bool shape_triggered = false;
+bool shape_knob_changed = false;
+float old_shape_in;
+float old_shape_knob;
+float shape_attenuation = 1.0f;
+
 float env_out_1;
 float env_out_2;
 
@@ -162,12 +179,14 @@ float chorus_lfo = 0.0f;
 
 int button_press_count = 0;
 
-void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
+void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size)
+{
     patch.ProcessAllControls();
 
-    Settings& settings_data = storage.GetSettings();
+    Settings &settings_data = storage.GetSettings();
 
-    if (!settings_initialized) {
+    if (!settings_initialized)
+    {
         scale_1 = settings_data.scale_1;
         offset_1 = settings_data.offset_1;
         scale_2 = settings_data.scale_2;
@@ -183,10 +202,12 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     bool button_pressed = button.RisingEdge();
 
-    if (calibration_mode) {
+    if (calibration_mode)
+    {
         bool calibration_1_complete = calibration_1.ProcessCalibration(voct_1_input, button_pressed);
         bool calibration_2_complete = calibration_2.ProcessCalibration(voct_2_input, button_pressed);
-        if (calibration_1_complete && calibration_2_complete) {
+        if (calibration_1_complete && calibration_2_complete)
+        {
             calibration_1.cal.GetData(settings_data.scale_1, settings_data.offset_1);
             calibration_2.cal.GetData(settings_data.scale_2, settings_data.offset_2);
             trigger_save = true;
@@ -198,14 +219,18 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float time_now = System::GetNow();
     float time_between_presses = time_now - last_button_press;
 
-    if (time_between_presses >= 1000 && button_press_count != 0) {
+    if (time_between_presses >= 1000 && button_press_count != 0)
+    {
         button_press_count = 0;
-    } else if (button_pressed && !calibration_mode) {
+    }
+    else if (button_pressed && !calibration_mode)
+    {
         last_button_press = System::GetNow();
         button_press_count++;
     }
 
-    if (button_press_count >= 5 && !calibration_mode) {
+    if (button_press_count >= 5 && !calibration_mode)
+    {
         button_press_count = 0;
         calibration_mode = true;
         led_brightness = 1.0f;
@@ -213,12 +238,14 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         calibration_2.Start();
     }
 
-    if (patch.gate_in_1.Trig()) {
+    if (patch.gate_in_1.Trig())
+    {
         gate_1_triggered = true;
         env_1.Trigger();
     }
 
-    if (patch.gate_in_2.Trig()) {
+    if (patch.gate_in_2.Trig())
+    {
         gate_2_triggered = true;
         env_2.Trigger();
     }
@@ -249,7 +276,41 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     env_2.SetTime(ADENV_SEG_DECAY, decay_time);
 
     float shape_cv = patch.GetAdcValue(CV_8);
-    float shape_value = fmap(shape_knob + shape_cv, 0.0f, 2.0f, Mapping::LINEAR);
+
+    if (old_shape_in - shape_cv > 0.01f)
+    {
+        shape_triggered = true;
+    }
+
+    if (old_shape_knob - shape_knob > 0.01f)
+    {
+        shape_knob_changed = true;
+    }
+
+    float shape_attenuation;
+
+    if (shape_knob_changed)
+    {
+        shape_attenuation = fclamp(shape_knob, 0.1f, 1.0f);
+    }
+    else
+    {
+        shape_attenuation = 1.0f;
+    }
+
+    float shape_value;
+
+    if (shape_triggered)
+    {
+        shape_value = fmap(shape_cv * shape_attenuation, 0.0f, 2.0f, Mapping::LINEAR);
+    }
+    else
+    {
+        shape_value = fmap(shape_cv + shape_knob, 0.0f, 2.0f, Mapping::LINEAR);
+    }
+
+    osc_pw_target_l = fmap(shape_value, 0.2f, 0.8f, Mapping::LINEAR);
+    osc_pw_target_r = fmap(shape_value, 0.3f, 0.95f, Mapping::LINEAR);
 
     /** Cutoff and chorus depth */
     float knob_3_current_value = patch.GetAdcValue(CV_3);
@@ -283,11 +344,13 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float k = modulate_knob * 0.5f;
     chorus.SetPan(0.5f - k, 0.5f + k);
 
-    for(size_t i = 0; i < size; i++) {
+    for (size_t i = 0; i < size; i++)
+    {
         float dry_l = IN_L[i];
         float dry_r = IN_R[i];
 
-        if (old_in_l - dry_l > 0.001f) {
+        if (old_in_l - dry_l > 0.001f)
+        {
             audio_triggered = true;
         }
 
@@ -308,6 +371,12 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         env_out_1 = env_1.Process();
         env_out_2 = env_2.Process();
 
+        fonepole(osc_pw_l, osc_pw_target_l, .0001f);
+        fonepole(osc_pw_r, osc_pw_target_r, .0001f);
+
+        osc_1_square.SetPw(osc_pw_l);
+        osc_2_square.SetPw(osc_pw_r);
+
         osc_1.SetFreq(osc_freq_1);
         osc_1_square.SetFreq(osc_freq_1);
         osc_1_saw.SetFreq(osc_freq_1);
@@ -324,26 +393,34 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
         float osc_1_out, osc_2_out;
 
-        if (shape_value < 1.0f) {
-            osc_1_out = Crossfade(osc_1_processed, osc_1_square_processed, shape_value);
-            osc_2_out = Crossfade(osc_2_processed, osc_2_square_processed, shape_value);
-        } else if (shape_value == 1.0f) {
-            osc_1_out = osc_1_square_processed;
-            osc_2_out = osc_2_square_processed;
-        } else {
-            osc_1_out = Crossfade(osc_1_square_processed, osc_1_saw_processed, shape_value - 1.0f);
-            osc_2_out = Crossfade(osc_2_square_processed, osc_2_saw_processed, shape_value - 1.0f);
+        if (shape_value == 1.0f)
+        {
+            osc_1_out = osc_1_processed;
+            osc_2_out = osc_2_processed;
+        }
+        else if (shape_value < 1.0f)
+        {
+            osc_1_out = Crossfade(osc_1_square_processed, osc_1_processed, shape_value);
+            osc_2_out = Crossfade(osc_2_square_processed, osc_2_processed, shape_value);
+        }
+        else
+        {
+            osc_1_out = Crossfade(osc_1_processed, osc_1_saw_processed, shape_value - 1.0f);
+            osc_2_out = Crossfade(osc_2_processed, osc_2_saw_processed, shape_value - 1.0f);
         }
 
         float osc_mix = (osc_2_out * env_out_2) + (osc_1_out * env_out_1);
 
         float compressor_in_l, compressor_in_r;
 
-        if (osc_mode) {
+        if (osc_mode)
+        {
             chorus.Process(osc_mix);
             compressor_in_l = chorus.GetLeft();
             compressor_in_r = chorus.GetRight();
-        } else {
+        }
+        else
+        {
             compressor_in_l = chorus_engine_l.Process(dry_l);
             compressor_in_r = chorus_engine_l.Process(dry_r);
         }
@@ -358,36 +435,44 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         float wet_l = filter_l.Low();
         float wet_r = filter_r.Low();
 
-        if (calibration_mode) {
+        if (calibration_mode)
+        {
             patch.WriteCvOut(CV_OUT_BOTH, led_brightness * 5.0f);
-        } else {
+        }
+        else
+        {
             patch.WriteCvOut(CV_OUT_BOTH, (env_out_1 * 5.0f));
         }
 
-        if (!audio_triggered && pass_mode) {
+        if (!audio_triggered && pass_mode)
+        {
             OUT_L[i] = env_out_1;
             OUT_R[i] = env_out_2;
-        } else {
+        }
+        else
+        {
             OUT_L[i] = wet_l * volume;
             OUT_R[i] = wet_r * volume;
         }
     }
 }
 
-int main(void) {
+int main(void)
+{
     patch.Init();
 
     float sample_rate = patch.AudioSampleRate();
 
     storage.Init(default_settings);
 
-    if(storage.GetState() == PersistentStorage<Settings>::State::FACTORY) {
+    if (storage.GetState() == PersistentStorage<Settings>::State::FACTORY)
+    {
         // Update the user values with the defaults.
         storage.RestoreDefaults();
     }
 
     /** Restore settings from previous power cycle */
-    Settings& settings_data = storage.GetSettings();
+    Settings &settings_data = storage.GetSettings();
 
     calibration_1.cal.SetData(settings_data.scale_1, settings_data.offset_1);
     calibration_2.cal.SetData(settings_data.scale_2, settings_data.offset_2);
@@ -418,8 +503,8 @@ int main(void) {
 
     osc_1.SetAmp(0.05f);
     osc_2.SetAmp(0.05f);
-    osc_1_square.SetAmp(0.012f);
-    osc_2_square.SetAmp(0.012f);
+    osc_1_square.SetAmp(0.015f);
+    osc_2_square.SetAmp(0.015f);
     osc_1_saw.SetAmp(0.015f);
     osc_2_saw.SetAmp(0.015f);
 
@@ -454,10 +539,12 @@ int main(void) {
     compressor.SetThreshold(-12.0f);
 
     patch.StartAudio(AudioCallback);
-    
-    while(1) {
+
+    while (1)
+    {
         patch.Delay(1);
-        if (trigger_save) {
+        if (trigger_save)
+        {
             storage.Save();
             trigger_save = false;
         }
