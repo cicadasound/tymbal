@@ -92,8 +92,6 @@ Switch toggle;
 AdEnv env_1;
 AdEnv env_2;
 
-Oscillator osc_1;
-Oscillator osc_2;
 Oscillator osc_1_saw;
 Oscillator osc_2_saw;
 Oscillator osc_1_square;
@@ -309,8 +307,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         shape_value = fmap(shape_cv + shape_knob, 0.0f, 2.0f, Mapping::LINEAR);
     }
 
-    osc_pw_target_l = fmap(shape_value, 0.2f, 0.8f, Mapping::LINEAR);
-    osc_pw_target_r = fmap(shape_value, 0.3f, 0.95f, Mapping::LINEAR);
+    osc_pw_target_l = fclamp(shape_value, 0.2f, 0.8f);
+    osc_pw_target_r = fclamp(shape_value, 0.3f, 0.95f);
 
     /** Cutoff and chorus depth */
     float knob_3_current_value = patch.GetAdcValue(CV_3);
@@ -377,37 +375,18 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         osc_1_square.SetPw(osc_pw_l);
         osc_2_square.SetPw(osc_pw_r);
 
-        osc_1.SetFreq(osc_freq_1);
         osc_1_square.SetFreq(osc_freq_1);
         osc_1_saw.SetFreq(osc_freq_1);
-        osc_2.SetFreq(osc_freq_2);
         osc_2_square.SetFreq(osc_freq_2);
         osc_2_saw.SetFreq(osc_freq_2);
 
-        float osc_1_processed = osc_1.Process();
-        float osc_2_processed = osc_2.Process();
         float osc_1_square_processed = osc_1_square.Process();
         float osc_2_square_processed = osc_2_square.Process();
         float osc_1_saw_processed = osc_1_saw.Process();
         float osc_2_saw_processed = osc_2_saw.Process();
 
-        float osc_1_out, osc_2_out;
-
-        if (shape_value == 1.0f)
-        {
-            osc_1_out = osc_1_processed;
-            osc_2_out = osc_2_processed;
-        }
-        else if (shape_value < 1.0f)
-        {
-            osc_1_out = Crossfade(osc_1_square_processed, osc_1_processed, shape_value);
-            osc_2_out = Crossfade(osc_2_square_processed, osc_2_processed, shape_value);
-        }
-        else
-        {
-            osc_1_out = Crossfade(osc_1_processed, osc_1_saw_processed, shape_value - 1.0f);
-            osc_2_out = Crossfade(osc_2_processed, osc_2_saw_processed, shape_value - 1.0f);
-        }
+        float osc_1_out = Crossfade(osc_1_square_processed, osc_1_saw_processed, shape_value / 2.0f);
+        float osc_2_out = Crossfade(osc_2_square_processed, osc_2_saw_processed, shape_value / 2.0f);
 
         float osc_mix = (osc_2_out * env_out_2) + (osc_1_out * env_out_1);
 
@@ -494,22 +473,16 @@ int main(void)
     env_2.SetMax(10.0f);
     env_2.SetCurve(0);
 
-    osc_1.Init(sample_rate);
-    osc_2.Init(sample_rate);
     osc_1_saw.Init(sample_rate);
     osc_2_saw.Init(sample_rate);
     osc_1_square.Init(sample_rate);
     osc_2_square.Init(sample_rate);
 
-    osc_1.SetAmp(0.05f);
-    osc_2.SetAmp(0.05f);
     osc_1_square.SetAmp(0.015f);
     osc_2_square.SetAmp(0.015f);
     osc_1_saw.SetAmp(0.015f);
     osc_2_saw.SetAmp(0.015f);
 
-    osc_1.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
-    osc_2.SetWaveform(Oscillator::WAVE_POLYBLEP_TRI);
     osc_1_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
     osc_2_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
     osc_1_saw.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
