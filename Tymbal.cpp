@@ -13,9 +13,10 @@ float DETUNE_RANGE = 0.005f;
 
 float last_button_press;
 
-inline float Crossfade(float a, float b, float fade)
+float Crossfade(float signal1, float signal2, float mix)
 {
-    return a + (b - a) * fade;
+    mix = fminf(fmaxf(mix, 0.0f), 1.0f);
+    return (1.0f - mix) * signal1 + mix * signal2;
 }
 
 float IndexToBrightness(int index, int total)
@@ -289,7 +290,7 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     if (shape_knob_changed)
     {
-        shape_attenuation = fclamp(shape_knob, 0.1f, 1.0f);
+        shape_attenuation = shape_knob;
     }
     else
     {
@@ -300,11 +301,11 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
 
     if (shape_triggered)
     {
-        shape_value = fmap(shape_cv * shape_attenuation, 0.0f, 2.0f, Mapping::LINEAR);
+        shape_value = shape_cv * shape_attenuation;
     }
     else
     {
-        shape_value = fmap(shape_cv + shape_knob, 0.0f, 2.0f, Mapping::LINEAR);
+        shape_value = shape_knob;
     }
 
     osc_pw_target_l = fclamp(shape_value, 0.2f, 0.8f);
@@ -376,8 +377,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         osc_2_square.SetPw(osc_pw_r);
 
         osc_1_square.SetFreq(osc_freq_1);
-        osc_1_saw.SetFreq(osc_freq_1);
         osc_2_square.SetFreq(osc_freq_2);
+        osc_1_saw.SetFreq(osc_freq_1);
         osc_2_saw.SetFreq(osc_freq_2);
 
         float osc_1_square_processed = osc_1_square.Process();
@@ -385,10 +386,21 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         float osc_1_saw_processed = osc_1_saw.Process();
         float osc_2_saw_processed = osc_2_saw.Process();
 
-        float osc_1_out = Crossfade(osc_1_square_processed, osc_1_saw_processed, shape_value / 2.0f);
-        float osc_2_out = Crossfade(osc_2_square_processed, osc_2_saw_processed, shape_value / 2.0f);
+        float osc_1_out, osc_2_out;
 
-        float osc_mix = (osc_2_out * env_out_2) + (osc_1_out * env_out_1);
+        if (shape_value < 0.5f)
+        {
+            osc_1_out = osc_1_square_processed;
+            osc_2_out = osc_2_square_processed;
+        }
+        else
+        {
+            float morph = (shape_value - 0.5f) * 2.0f;
+            osc_1_out = Crossfade(osc_1_square_processed, osc_1_saw_processed, morph);
+            osc_2_out = Crossfade(osc_2_square_processed, osc_2_saw_processed, morph);
+        }
+
+        float osc_mix = (osc_1_out * env_out_1) + (osc_2_out * env_out_2);
 
         float compressor_in_l, compressor_in_r;
 
