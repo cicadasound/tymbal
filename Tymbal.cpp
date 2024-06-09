@@ -308,8 +308,8 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
         shape_value = shape_knob;
     }
 
-    osc_pw_target_l = fclamp(shape_value, 0.2f, 0.8f);
-    osc_pw_target_r = fclamp(shape_value, 0.3f, 0.95f);
+    osc_pw_target_l = fclamp(shape_value * 2.0f, 0.1f, 0.9f);
+    osc_pw_target_r = fclamp(shape_value * 2.0f, 0.2f, 0.95f);
 
     /** Cutoff and chorus depth */
     float knob_3_current_value = patch.GetAdcValue(CV_3);
@@ -492,8 +492,8 @@ int main(void)
 
     osc_1_square.SetAmp(0.015f);
     osc_2_square.SetAmp(0.015f);
-    osc_1_saw.SetAmp(0.015f);
-    osc_2_saw.SetAmp(0.015f);
+    osc_1_saw.SetAmp(0.02f);
+    osc_2_saw.SetAmp(0.02f);
 
     osc_1_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
     osc_2_square.SetWaveform(Oscillator::WAVE_POLYBLEP_SQUARE);
