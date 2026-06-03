@@ -30,7 +30,7 @@ struct Settings
 };
 
 static Settings default_settings{
-    0.8f, // volume
+    0.7f, // volume
     0.0f, // fine_tune
     0.0f, // scale_1
     0.0f, // offset_1

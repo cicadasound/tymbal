@@ -27,6 +27,7 @@ struct TymbalVoice
     float ch_depth  = 0.f;
     float ch_rate_l = 0.2f;
     float ch_rate_r = 0.18f;
+    float peak_     = 0.f;
 
     // ── Parameter struct (all values 0–1 normalised) ──────────────────────────
 
@@ -70,8 +71,8 @@ struct TymbalVoice
         chorus_l.Init(sr); chorus_l.SetLfoFreq(0.2f);  chorus_l.SetLfoDepth(0.f);
         chorus_r.Init(sr); chorus_r.SetLfoFreq(0.18f); chorus_r.SetLfoDepth(0.f);
 
-        filter_l.Init(sr); filter_l.SetFreq(15000.f); filter_l.SetRes(0.1f); filter_l.SetDrive(0.f);
-        filter_r.Init(sr); filter_r.SetFreq(15000.f); filter_r.SetRes(0.1f); filter_r.SetDrive(0.f);
+        filter_l.Init(sr); filter_l.SetFreq(15000.f); filter_l.SetRes(0.1f); filter_l.SetDrive(0.3f);
+        filter_r.Init(sr); filter_r.SetFreq(15000.f); filter_r.SetRes(0.1f); filter_r.SetDrive(0.3f);
     }
 
     // ── Main oscillator path ──────────────────────────────────────────────────
@@ -117,7 +118,7 @@ struct TymbalVoice
         float pre_r = mix + (wet_r - mix) * p.chorus;
 
         filter_l.Process(pre_l); filter_r.Process(pre_r);
-        return { tanhf(filter_l.Low()), tanhf(filter_r.Low()), env_out_1 };
+        return limit(filter_l.Low(), filter_r.Low(), env_out_1);
     }
 
     // ── Audio pass-through path (hardware only) ───────────────────────────────
@@ -137,10 +138,19 @@ struct TymbalVoice
         float mix_r = in_r + (wet_r - in_r) * p.chorus;
 
         filter_l.Process(mix_l); filter_r.Process(mix_r);
-        return { tanhf(filter_l.Low()), tanhf(filter_r.Low()), env_out_1 };
+        return limit(filter_l.Low(), filter_r.Low(), env_out_1);
     }
 
   private:
+    // Peak limiter: instant attack, ~100ms release. Transparent below 0.95.
+    Output limit(float l, float r, float env)
+    {
+        float level = fmaxf(fabsf(l), fabsf(r));
+        peak_ = (level > peak_) ? level : peak_ * 0.9998f;
+        float gain = (peak_ > 0.95f) ? 0.95f / peak_ : 1.f;
+        return { l * gain, r * gain, env };
+    }
+
     static inline float saw(float phase)
     {
         phase -= floorf(phase);
