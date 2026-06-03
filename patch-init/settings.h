@@ -9,7 +9,7 @@ struct Settings
     float scale_2;
     float offset_2;
     float shape_knob;
-    float pwm_knob;
+    float filter_cv_amount;
     float chorus_knob;
     float env_mod_knob;
 
@@ -22,7 +22,7 @@ struct Settings
                scale_2 == rhs.scale_2 &&
                offset_2 == rhs.offset_2 &&
                shape_knob == rhs.shape_knob &&
-               pwm_knob == rhs.pwm_knob &&
+               filter_cv_amount == rhs.filter_cv_amount &&
                chorus_knob == rhs.chorus_knob &&
                env_mod_knob == rhs.env_mod_knob;
     }
@@ -36,8 +36,8 @@ static Settings default_settings{
     0.0f, // offset_1
     0.0f, // scale_2
     0.0f, // offset_2
-    0.0f, // shape_knob (0 = square)
-    0.0f, // pwm_knob   (0 = 50% duty / true square)
+    0.0f, // shape_knob
+    0.0f, // filter_cv_amount (0 = CV has no effect)
     0.0f, // chorus_knob
     0.0f, // env_mod_knob
 };
