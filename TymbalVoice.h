@@ -70,8 +70,8 @@ struct TymbalVoice
         chorus_l.Init(sr); chorus_l.SetLfoFreq(0.2f);  chorus_l.SetLfoDepth(0.f);
         chorus_r.Init(sr); chorus_r.SetLfoFreq(0.18f); chorus_r.SetLfoDepth(0.f);
 
-        filter_l.Init(sr); filter_l.SetFreq(15000.f); filter_l.SetRes(0.1f); filter_l.SetDrive(0.3f);
-        filter_r.Init(sr); filter_r.SetFreq(15000.f); filter_r.SetRes(0.1f); filter_r.SetDrive(0.3f);
+        filter_l.Init(sr); filter_l.SetFreq(15000.f); filter_l.SetRes(0.1f); filter_l.SetDrive(0.f);
+        filter_r.Init(sr); filter_r.SetFreq(15000.f); filter_r.SetRes(0.1f); filter_r.SetDrive(0.f);
     }
 
     // ── Main oscillator path ──────────────────────────────────────────────────
@@ -117,7 +117,7 @@ struct TymbalVoice
         float pre_r = mix + (wet_r - mix) * p.chorus;
 
         filter_l.Process(pre_l); filter_r.Process(pre_r);
-        return { filter_l.Low(), filter_r.Low(), env_out_1 };
+        return { tanhf(filter_l.Low()), tanhf(filter_r.Low()), env_out_1 };
     }
 
     // ── Audio pass-through path (hardware only) ───────────────────────────────
@@ -137,7 +137,7 @@ struct TymbalVoice
         float mix_r = in_r + (wet_r - in_r) * p.chorus;
 
         filter_l.Process(mix_l); filter_r.Process(mix_r);
-        return { filter_l.Low(), filter_r.Low(), env_out_1 };
+        return { tanhf(filter_l.Low()), tanhf(filter_r.Low()), env_out_1 };
     }
 
   private:
