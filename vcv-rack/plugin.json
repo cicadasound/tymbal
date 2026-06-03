@@ -1,7 +1,7 @@
 {
   "slug": "Tymbal",
   "name": "Tymbal",
-  "version": "2.0.0",
+  "version": "0.0.8",
   "license": "MIT",
   "brand": "CicadaSound",
   "author": "Dominic McPhee",
@@ -10,7 +10,12 @@
       "slug": "Tymbal",
       "name": "Tymbal",
       "description": "Stereo two-voice synth with dual oscillators, SVF filter, and chorus",
-      "tags": ["Oscillator", "Filter", "Envelope", "Effect"]
+      "tags": [
+        "Oscillator",
+        "Filter",
+        "Envelope",
+        "Effect"
+      ]
     }
   ]
 }
