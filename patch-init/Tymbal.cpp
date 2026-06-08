@@ -49,7 +49,7 @@ struct UI
     int   button_press_count   = 0;
 } ui;
 
-float volume = 1.0f;
+float volume = 0.5f;
 
 // ── Audio processing ──────────────────────────────────────────────────────────
 

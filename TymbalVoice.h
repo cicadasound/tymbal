@@ -170,7 +170,7 @@ struct TymbalVoice
         float effective_cv = filter_cv * p.filter_cv_amount;
         float env_mod      = p.env_mod * env_out_1;
         float ff = fmap(fclamp(p.cutoff + effective_cv + env_mod, 0.f, 1.f),
-                        80.f, 18000.f, Mapping::LOG);
+                        30.f, 12000.f, Mapping::LOG);
         filter_l.SetFreq(ff); filter_r.SetFreq(ff);
         filter_l.SetRes(fmap(p.resonance, 0.f, 0.98f, Mapping::LINEAR));
         filter_r.SetRes(fmap(p.resonance, 0.f, 0.98f, Mapping::LINEAR));
